@@ -3,9 +3,15 @@ import Carrot from '../game/Carrot';
 import background from '../assets/bg_layer1.png';
 import platform from '../assets/ground_grass.png';
 import bunnyStand from '../assets/bunny1_stand.png';
+import bunnJump from '../assets/bunny1_jump.png';
 import carrot from '../assets/carrot.png';
+import jumpSound from '../assets/phaseJump1.ogg';
+import colectCarrot from '../assets/powerUp8.ogg'
 
 export default class Game extends Phaser.Scene {
+
+  carrotsCollected = 0;
+
   /** @type {Phaser.Physics.Arcade.StaticGroup} */
   platforms
   /** @type {Phaser.Physics.Arcade.Sprite} */
@@ -19,11 +25,17 @@ export default class Game extends Phaser.Scene {
     super('game');
   }
 
+  init() {
+    this.carrotsCollected = 0;
+  }
   preload() {
     this.load.image('background', background);
     this.load.image('platform', platform);
     this.load.image('bunny-stand', bunnyStand);
+    this.load.image('bunny-jump', bunnJump);
     this.load.image('carrot', carrot);
+    this.load.audio('jump', jumpSound);
+    this.load.audio('collect-carrot', colectCarrot)
 
     this.cursors = this.input.keyboard.createCursorKeys();
   }
@@ -58,8 +70,19 @@ export default class Game extends Phaser.Scene {
     
     this.physics.add.collider(this.platforms, this.carrots);
 
+    this.physics.add.overlap(
+      this.player,
+      this. carrots,
+      this.handleCollectCarrot,
+      undefined,
+      this
+    )
+
     this.cameras.main.startFollow(this.player );
     this.cameras.main.setDeadzone(this.scale.width * 1.5);
+
+    const style = {color: '#2a2a2a', fontSize: 24}
+    this.carrotsCollectedText = this.add.text(240, 10, 'Carrots: 0', style).setScrollFactor(0).setOrigin(0.5, 0);
 
   }
 
@@ -77,8 +100,31 @@ export default class Game extends Phaser.Scene {
       }
     })
 
+    this.carrots.children.iterate(child => {
+      /** @type {Phaser.Physics.Arcade.Sprite} */
+      const carrot = child;
+      
+      const scrollY = this.cameras.main.scrollY;
+
+      if (carrot.y >= scrollY + 700) {
+        this.carrots.killAndHide(carrot);
+        this.physics.world.disableBody(carrot.body);
+      }
+    })
+
     const touchingDown = this.player.body.touching.down;
-    touchingDown ? this.player.setVelocityY(-300) : null;
+    
+    if(touchingDown){
+      this.player.setVelocityY(-300);
+      this.player.setTexture('bunny-jump');
+      this.sound.play('jump');
+    }
+
+    const yVelocity = this.player.body.velocity.y;
+    if (yVelocity > 0 && this.player.texture.key !== 'bunny-stand') {
+      this.player.setTexture('bunny-stand')
+    }
+
     if (this.cursors.left.isDown && !touchingDown) {
       this.player.setVelocityX(-200);
     } else if (this.cursors.right.isDown && !touchingDown) {
@@ -88,7 +134,13 @@ export default class Game extends Phaser.Scene {
     }
 
     this.horizontalWrap(this.player);
+
+    const bottomPlatform = this.findBottomMostPlatform();
+    if(this.player.y > bottomPlatform.y + 200) {
+      this.scene.start('game-over');
+    }
   }
+
   /**
    *  @type {Phaser.GameObjects.Sprite} sprite
    */
@@ -110,9 +162,43 @@ export default class Game extends Phaser.Scene {
 
     /** @type {Phaser.Physics.Arcade.Sprite} */
     const carrot = this.carrots.get(sprite.x, y, 'carrot');
+
+    carrot.setActive(true);
+    carrot.setVisible(true);
     this.add.existing(carrot);
 
     carrot.body.setSize(carrot.width, carrot.height);
+
+    this.physics.world.enable(carrot);
+
     return carrot;
+  }
+
+  /**
+   * @param {Phaser.Physics.Arcade.Sprite} player
+   * @param {Carrot} carrot
+   */
+  handleCollectCarrot(player, carrot){
+    this.carrots.killAndHide(carrot);
+    this.physics.world.disableBody(carrot.body);
+    this.carrotsCollected++
+
+    this.sound.play('collect-carrot')
+    this.carrotsCollectedText.text = `Carrots: ${this.carrotsCollected}`;
+  }
+
+  findBottomMostPlatform() {
+    const platforms = this.platforms.getChildren();
+    let bottomPlatform = platforms[0];
+
+    for (let i = 1; i < platforms.length; ++i) {
+      let platform = platforms[i];
+      
+      if(platform.y < bottomPlatform.y) {
+        continue
+      }
+      bottomPlatform = platform;
+    }
+    return bottomPlatform;
   }
 }
